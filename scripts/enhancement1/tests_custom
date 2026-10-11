@@ -1,0 +1,55 @@
+#!/bin/sh
+# Project: Enhancing Lynis with USB Storage and Removable Media Security Auditing
+# Enhancement 1: USB storage kernel module auditing
+# This file is sourced by Lynis; do not execute it directly.
+
+InsertSection "Custom tests - USB Storage Module"
+
+Register --test-no CUST-0040 --os Linux --weight M --network NO --category security \
+    --description "Audit USB storage kernel module state"
+
+if [ "${SKIPTEST}" -eq 0 ]; then
+    MODULE_INSTALLED=0
+    MODULE_LOADED=0
+    MODULE_BLACKLISTED=0
+    MODPROBE_DIR="${ROOTDIR}etc/modprobe.d"
+
+    LogText "Test: Checking whether the usb_storage kernel module is available"
+    if command -v modinfo >/dev/null 2>&1 && modinfo usb_storage >/dev/null 2>&1; then
+        MODULE_INSTALLED=1
+        Display --indent 2 --text "- Checking usb-storage kernel module" --result "FOUND" --color GREEN
+        LogText "Result: usb_storage module information is available"
+    else
+        Display --indent 2 --text "- Checking usb-storage kernel module" --result "NOT FOUND" --color WHITE
+        LogText "Result: usb_storage module information was not found"
+    fi
+
+    LogText "Test: Checking whether usb_storage is currently loaded"
+    if command -v lsmod >/dev/null 2>&1 && lsmod 2>/dev/null | grep -q '^usb_storage[[:space:]]'; then
+        MODULE_LOADED=1
+        Display --indent 2 --text "- Checking usb-storage module state" --result "LOADED" --color YELLOW
+        LogText "Result: usb_storage is loaded"
+    else
+        Display --indent 2 --text "- Checking usb-storage module state" --result "NOT LOADED" --color GREEN
+        LogText "Result: usb_storage is not loaded"
+    fi
+
+    LogText "Test: Checking module blacklist rules in ${MODPROBE_DIR}"
+    if [ -d "${MODPROBE_DIR}" ] && grep -R -E '^[[:space:]]*blacklist[[:space:]]+usb[-_]storage([[:space:]]|$)' "${MODPROBE_DIR}" >/dev/null 2>&1; then
+        MODULE_BLACKLISTED=1
+        Display --indent 2 --text "- Checking usb-storage blacklist" --result "BLACKLISTED" --color GREEN
+        LogText "Result: a usb-storage blacklist rule was found"
+    else
+        Display --indent 2 --text "- Checking usb-storage blacklist" --result "NOT BLACKLISTED" --color YELLOW
+        LogText "Result: no usb-storage blacklist rule was found"
+        ReportSuggestion "${TEST_NO}" "Consider disabling USB storage when it is not required by policy"
+    fi
+
+    if [ "${MODULE_BLACKLISTED}" -eq 1 ]; then
+        AddHP 3 3
+    elif [ "${MODULE_LOADED}" -eq 1 ]; then
+        AddHP 1 3
+    else
+        AddHP 2 3
+    fi
+fi

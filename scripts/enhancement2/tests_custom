@@ -1,0 +1,93 @@
+#!/bin/sh
+# Project: Enhancing Lynis with USB Storage and Removable Media Security Auditing
+# Enhancement 2: Module auditing plus removable disk detection and risk classification
+# This file is sourced by Lynis; do not execute it directly.
+
+InsertSection "Custom tests - Removable Media"
+
+Register --test-no CUST-0040 --os Linux --weight M --network NO --category security \
+    --description "Assess USB storage and removable media security"
+
+if [ "${SKIPTEST}" -eq 0 ]; then
+    MODULE_INSTALLED=0
+    MODULE_LOADED=0
+    MODULE_BLACKLISTED=0
+    USB_PRESENT=0
+    MODPROBE_DIR="${ROOTDIR}etc/modprobe.d"
+
+    LogText "Test: Checking whether the usb_storage kernel module is available"
+    if command -v modinfo >/dev/null 2>&1 && modinfo usb_storage >/dev/null 2>&1; then
+        MODULE_INSTALLED=1
+        Display --indent 2 --text "- Checking usb-storage kernel module" --result "FOUND" --color GREEN
+        LogText "Result: usb_storage module information is available"
+    else
+        Display --indent 2 --text "- Checking usb-storage kernel module" --result "NOT FOUND" --color WHITE
+        LogText "Result: usb_storage module information was not found"
+    fi
+
+    LogText "Test: Checking whether usb_storage is currently loaded"
+    if command -v lsmod >/dev/null 2>&1 && lsmod 2>/dev/null | grep -q '^usb_storage[[:space:]]'; then
+        MODULE_LOADED=1
+        Display --indent 2 --text "- Checking usb-storage module state" --result "LOADED" --color YELLOW
+        LogText "Result: usb_storage is loaded"
+    else
+        Display --indent 2 --text "- Checking usb-storage module state" --result "NOT LOADED" --color GREEN
+        LogText "Result: usb_storage is not loaded"
+    fi
+
+    LogText "Test: Checking module blacklist rules in ${MODPROBE_DIR}"
+    if [ -d "${MODPROBE_DIR}" ] && grep -R -E '^[[:space:]]*blacklist[[:space:]]+usb[-_]storage([[:space:]]|$)' "${MODPROBE_DIR}" >/dev/null 2>&1; then
+        MODULE_BLACKLISTED=1
+        Display --indent 2 --text "- Checking usb-storage blacklist" --result "BLACKLISTED" --color GREEN
+        LogText "Result: a usb-storage blacklist rule was found"
+    else
+        Display --indent 2 --text "- Checking usb-storage blacklist" --result "NOT BLACKLISTED" --color YELLOW
+        LogText "Result: no usb-storage blacklist rule was found"
+    fi
+
+    LogText "Test: Looking for removable block devices using lsblk"
+    if command -v lsblk >/dev/null 2>&1 && lsblk -dn -o NAME,RM,TYPE 2>/dev/null | awk '$2 == 1 && $3 == "disk" { found=1 } END { exit !found }'; then
+        USB_PRESENT=1
+        Display --indent 2 --text "- Checking for removable storage" --result "DETECTED" --color YELLOW
+        LogText "Result: at least one removable disk was detected"
+    else
+        Display --indent 2 --text "- Checking for removable storage" --result "NOT DETECTED" --color GREEN
+        LogText "Result: no removable disk was detected"
+    fi
+
+    # Project risk model. This is a project-defined classification, not a
+    # universal Lynis severity standard.
+    if [ "${MODULE_BLACKLISTED}" -eq 1 ]; then
+        RISK="LOW"
+        RISK_COLOR="GREEN"
+        RISK_HP=3
+        RISK_NOTE="USB storage is blacklisted by module configuration"
+    elif [ "${MODULE_LOADED}" -eq 1 ] && [ "${USB_PRESENT}" -eq 1 ]; then
+        RISK="HIGH"
+        RISK_COLOR="RED"
+        RISK_HP=0
+        RISK_NOTE="USB storage is loaded and removable storage is connected"
+        ReportSuggestion "${TEST_NO}" "Review the need for USB storage and apply appropriate removable-media controls"
+    elif [ "${MODULE_LOADED}" -eq 1 ]; then
+        RISK="MEDIUM"
+        RISK_COLOR="YELLOW"
+        RISK_HP=1
+        RISK_NOTE="USB storage is loaded but no removable disk was detected"
+        ReportSuggestion "${TEST_NO}" "Disable USB storage when it is not required by policy"
+    elif [ "${USB_PRESENT}" -eq 1 ]; then
+        RISK="MEDIUM"
+        RISK_COLOR="YELLOW"
+        RISK_HP=1
+        RISK_NOTE="Removable storage was detected while usb_storage was not reported as loaded; investigate this state"
+        ReportSuggestion "${TEST_NO}" "Investigate the removable disk and verify the USB storage module state"
+    else
+        RISK="LOW"
+        RISK_COLOR="GREEN"
+        RISK_HP=3
+        RISK_NOTE="USB storage is not loaded and no removable disk was detected"
+    fi
+
+    LogText "Result: removable-media risk is ${RISK}. ${RISK_NOTE}"
+    Display --indent 2 --text "- Removable-media security risk" --result "${RISK}" --color "${RISK_COLOR}"
+    AddHP "${RISK_HP}" 3
+fi

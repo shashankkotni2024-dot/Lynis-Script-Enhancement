@@ -1,0 +1,28 @@
+# Machine-specific Lynis output
+lynis.log
+lynis-report.dat
+*.log
+
+# Local editor / OS files
+.DS_Store
+Thumbs.db
+*~
+
+# Non-code based items (documents, images, screenshots)
+docs/
+documents/
+screenshots/
+images/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.txt
+*.rtf
